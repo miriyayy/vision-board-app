@@ -13,12 +13,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Dimensions,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 export default function CollageScreen() {
@@ -42,8 +41,25 @@ export default function CollageScreen() {
     try {
       const imageData: UnsplashImage[] = JSON.parse(imageDataParam);
 
+      // Safety check: ensure we have valid image data
+      if (!Array.isArray(imageData) || imageData.length === 0) {
+        console.warn('CollageScreen: Invalid or empty image data');
+        setCollageImages([]);
+        setLoading(false);
+        return;
+      }
+
       const screenWidth = Dimensions.get('window').width - 48;
       const dimensions = getScreenDimensions(ratio, screenWidth);
+      
+      // Safety check: ensure valid dimensions
+      if (dimensions.width <= 0 || dimensions.height <= 0) {
+        console.warn('CollageScreen: Invalid screen dimensions');
+        setCollageImages([]);
+        setLoading(false);
+        return;
+      }
+      
       setScreenDimensions(dimensions);
 
       const collage = generateCollage(
@@ -52,10 +68,18 @@ export default function CollageScreen() {
         dimensions.height,
         collageMode
       );
-      setCollageImages(collage);
+      
+      // Safety check: ensure we got valid collage result
+      if (Array.isArray(collage)) {
+        setCollageImages(collage);
+      } else {
+        console.warn('CollageScreen: Invalid collage result, using empty array');
+        setCollageImages([]);
+      }
     } catch (error) {
-      Alert.alert('Error', 'Failed to generate collage');
-      router.back();
+      // Log error but don't show alert - grid generation should never throw now
+      console.error('CollageScreen: Error generating collage:', error);
+      setCollageImages([]);
     } finally {
       setLoading(false);
     }
@@ -65,10 +89,23 @@ export default function CollageScreen() {
     if (!imageDataParam) return;
     try {
       const imageData: UnsplashImage[] = JSON.parse(imageDataParam);
+      
+      // Safety check
+      if (!Array.isArray(imageData) || imageData.length === 0) {
+        console.warn('regenerateCollage: Invalid or empty image data');
+        return;
+      }
+      
       const dimensions = getScreenDimensions(
         ratio,
         Dimensions.get('window').width - 48
       );
+      
+      // Safety check
+      if (dimensions.width <= 0 || dimensions.height <= 0) {
+        console.warn('regenerateCollage: Invalid screen dimensions');
+        return;
+      }
       
       let newCollage: CollageImage[];
       if (collageMode === 'free') {
@@ -85,8 +122,14 @@ export default function CollageScreen() {
         );
       }
       
-      setCollageImages(newCollage);
+      // Safety check: ensure valid result
+      if (Array.isArray(newCollage)) {
+        setCollageImages(newCollage);
+      } else {
+        console.warn('regenerateCollage: Invalid collage result');
+      }
     } catch (error) {
+      // Log but don't throw - grid generation should never throw now
       console.error('Error regenerating collage:', error);
     }
   };

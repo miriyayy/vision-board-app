@@ -124,149 +124,212 @@ export function generateFreeCollage(
 }
 
 /**
+ * Calculate safe grid dimensions ensuring minimum size
+ */
+function calculateSafeGridDimensions(
+  imageCount: number,
+  screenWidth: number,
+  screenHeight: number
+): { cols: number; rows: number } {
+  if (imageCount <= 0) {
+    return { cols: 1, rows: 1 };
+  }
+
+  const aspectRatio = screenWidth / screenHeight;
+  
+  // Calculate initial grid dimensions
+  let cols = Math.max(1, Math.ceil(Math.sqrt(imageCount * aspectRatio)));
+  let rows = Math.max(1, Math.ceil(imageCount / cols));
+  
+  // Ensure we have at least 1x1 grid
+  if (cols === 0) cols = 1;
+  if (rows === 0) rows = 1;
+  
+  // Adjust to minimize empty space, but ensure minimum size
+  while ((rows - 1) * cols >= imageCount && rows > 1) {
+    rows--;
+  }
+  while (rows * (cols - 1) >= imageCount && cols > 1) {
+    cols--;
+  }
+  
+  // Final safety check
+  rows = Math.max(1, Math.ceil(imageCount / Math.max(1, cols)));
+  cols = Math.max(1, cols);
+  
+  return { cols, rows };
+}
+
+/**
  * Generate a symmetric grid collage
+ * Fully defensive and fault-tolerant - never throws errors
  */
 export function generateGridCollage(
   images: UnsplashImage[],
   screenWidth: number,
   screenHeight: number
 ): CollageImage[] {
-  if (images.length === 0) return [];
-
-  const screenArea = screenWidth * screenHeight;
-  const targetCoverage = screenArea * 1.1; // 110% coverage target
-  
-  // Start with original image count
-  let imageCount = images.length;
-  let collageImages: CollageImage[] = [];
-  const gap = 4;
-  
-  // Only expand image pool as last resort if we truly need more
-  let expandedImages = [...images];
-
-  // Calculate grid with current image count
-  const aspectRatio = screenWidth / screenHeight;
-  let cols = Math.ceil(Math.sqrt(imageCount * aspectRatio));
-  let rows = Math.ceil(imageCount / cols);
-  
-  // Adjust to minimize empty space
-  while ((rows - 1) * cols >= imageCount) {
-    rows--;
+  // Safety checks
+  if (!images || images.length === 0) {
+    console.warn('generateGridCollage: No images provided, returning empty array');
+    return [];
   }
-  while (rows * (cols - 1) >= imageCount && cols > 1) {
-    cols--;
+
+  if (screenWidth <= 0 || screenHeight <= 0) {
+    console.warn('generateGridCollage: Invalid screen dimensions, returning empty array');
+    return [];
   }
-  rows = Math.ceil(imageCount / cols);
-  
-  // Calculate cell dimensions
-  const totalGapWidth = gap * (cols - 1);
-  const totalGapHeight = gap * (rows - 1);
-  const cellWidth = (screenWidth - totalGapWidth) / cols;
-  const cellHeight = (screenHeight - totalGapHeight) / rows;
-  const cellSize = Math.min(cellWidth, cellHeight);
-  const actualCellWidth = cellSize;
-  const actualCellHeight = cellSize;
-  const cellArea = actualCellWidth * actualCellHeight;
-  
-  // Check if we need more images to reach target coverage
-  currentCoverage = imageCount * cellArea;
-  
-  if (currentCoverage < targetCoverage) {
-    // Calculate how many more cells we need
-    const additionalCellsNeeded = Math.ceil((targetCoverage - currentCoverage) / cellArea);
-    const newImageCount = imageCount + additionalCellsNeeded;
+
+  try {
+    const screenArea = screenWidth * screenHeight;
+    const targetCoverage = screenArea * 1.1; // 110% coverage target
+    const gap = 4;
     
-    // Recalculate grid with new count
-    cols = Math.ceil(Math.sqrt(newImageCount * aspectRatio));
-    rows = Math.ceil(newImageCount / cols);
+    // Start with original image count
+    let imageCount = images.length;
+    const collageImages: CollageImage[] = [];
     
-    while ((rows - 1) * cols >= newImageCount) {
-      rows--;
+    // Ensure we have at least one image
+    if (imageCount === 0) {
+      console.warn('generateGridCollage: imageCount is 0, returning empty array');
+      return [];
     }
-    while (rows * (cols - 1) >= newImageCount && cols > 1) {
-      cols--;
+
+    // Calculate initial grid dimensions safely
+    let { cols, rows } = calculateSafeGridDimensions(imageCount, screenWidth, screenHeight);
+    
+    // Calculate cell dimensions with safety checks
+    const totalGapWidth = gap * Math.max(0, cols - 1);
+    const totalGapHeight = gap * Math.max(0, rows - 1);
+    const availableWidth = Math.max(1, screenWidth - totalGapWidth);
+    const availableHeight = Math.max(1, screenHeight - totalGapHeight);
+    
+    const cellWidth = availableWidth / Math.max(1, cols);
+    const cellHeight = availableHeight / Math.max(1, rows);
+    const cellSize = Math.max(1, Math.min(cellWidth, cellHeight));
+    const cellArea = cellSize * cellSize;
+    
+    // Check if we need more images to reach target coverage
+    const currentCoverage = imageCount * cellArea;
+    
+    let finalCols = cols;
+    let finalRows = rows;
+    let finalImageCount = imageCount;
+    let finalCellSize = cellSize;
+    
+    if (cellArea > 0 && currentCoverage < targetCoverage) {
+      // Calculate how many more cells we need
+      const additionalCellsNeeded = Math.ceil((targetCoverage - currentCoverage) / cellArea);
+      const newImageCount = imageCount + additionalCellsNeeded;
+      
+      // Recalculate grid with new count safely
+      const newGrid = calculateSafeGridDimensions(newImageCount, screenWidth, screenHeight);
+      finalCols = newGrid.cols;
+      finalRows = newGrid.rows;
+      finalImageCount = newImageCount;
+      
+      // Recalculate cell dimensions with new grid
+      const newTotalGapWidth = gap * Math.max(0, finalCols - 1);
+      const newTotalGapHeight = gap * Math.max(0, finalRows - 1);
+      const newAvailableWidth = Math.max(1, screenWidth - newTotalGapWidth);
+      const newAvailableHeight = Math.max(1, screenHeight - newTotalGapHeight);
+      const newCellWidth = newAvailableWidth / Math.max(1, finalCols);
+      const newCellHeight = newAvailableHeight / Math.max(1, finalRows);
+      finalCellSize = Math.max(1, Math.min(newCellWidth, newCellHeight));
     }
-    rows = Math.ceil(newImageCount / cols);
     
-    // Recalculate cell dimensions with new grid
-    const newTotalGapWidth = gap * (cols - 1);
-    const newTotalGapHeight = gap * (rows - 1);
-    const newCellWidth = (screenWidth - newTotalGapWidth) / cols;
-    const newCellHeight = (screenHeight - newTotalGapHeight) / rows;
-    const newCellSize = Math.min(newCellWidth, newCellHeight);
-    const newActualCellWidth = newCellSize;
-    const newActualCellHeight = newCellSize;
+    // Calculate offsets for centering
+    const totalUsedWidth = finalCols * finalCellSize + gap * Math.max(0, finalCols - 1);
+    const totalUsedHeight = finalRows * finalCellSize + gap * Math.max(0, finalRows - 1);
+    const offsetX = Math.max(0, (screenWidth - totalUsedWidth) / 2);
+    const offsetY = Math.max(0, (screenHeight - totalUsedHeight) / 2);
     
-    const newTotalUsedWidth = cols * newActualCellWidth + (cols - 1) * gap;
-    const newTotalUsedHeight = rows * newActualCellHeight + (rows - 1) * gap;
-    const offsetX = (screenWidth - newTotalUsedWidth) / 2;
-    const offsetY = (screenHeight - newTotalUsedHeight) / 2;
-    
-    // Generate grid with expanded images
-    // Only duplicate if we don't have enough unique images
-    for (let i = 0; i < newImageCount; i++) {
-      let image: UnsplashImage;
-      if (i < expandedImages.length) {
-        image = expandedImages[i];
-      } else {
-        // Last resort: duplicate an image
-        const sourceImage = expandedImages[i % expandedImages.length];
-        image = {
-          ...sourceImage,
-          id: `${sourceImage.id}-dup-${i}`,
-        };
+    // Generate grid with safe image access
+    for (let i = 0; i < finalImageCount; i++) {
+      // Safe image access - never assume images[i] exists
+      let image: UnsplashImage | undefined = images[i % images.length];
+      
+      if (!image) {
+        // Fallback: use first image if available
+        if (images.length > 0) {
+          image = images[0];
+        } else {
+          console.warn(`generateGridCollage: No image available for index ${i}, skipping`);
+          continue;
+        }
       }
       
-      const row = Math.floor(i / cols);
-      const col = i % cols;
+      // Create duplicate if needed (beyond original image count)
+      if (i >= images.length) {
+        const sourceImage = images[i % images.length] || images[0];
+        if (sourceImage) {
+          image = {
+            ...sourceImage,
+            id: `${sourceImage.id}-dup-${i}`,
+          };
+        }
+      }
       
-      const x = offsetX + col * (newActualCellWidth + gap);
-      const y = offsetY + row * (newActualCellHeight + gap);
+      if (!image) {
+        console.warn(`generateGridCollage: Could not get image for index ${i}, skipping`);
+        continue;
+      }
       
-      collageImages.push({
-        id: image.id,
-        url: image.urls.regular,
-        x,
-        y,
-        width: newActualCellWidth,
-        height: newActualCellHeight,
-        scale: 1,
-        rotation: 0,
-        originalWidth: image.width,
-        originalHeight: image.height,
-      });
+      // Calculate position safely
+      const row = Math.floor(i / Math.max(1, finalCols));
+      const col = i % Math.max(1, finalCols);
+      
+      const x = offsetX + col * (finalCellSize + gap);
+      const y = offsetY + row * (finalCellSize + gap);
+      
+      // Ensure valid dimensions
+      if (finalCellSize > 0 && x >= 0 && y >= 0) {
+        collageImages.push({
+          id: image.id,
+          url: image.urls.regular,
+          x,
+          y,
+          width: finalCellSize,
+          height: finalCellSize,
+          scale: 1,
+          rotation: 0,
+          originalWidth: image.width || finalCellSize,
+          originalHeight: image.height || finalCellSize,
+        });
+      }
     }
-  } else {
-    // Original grid is sufficient
-    const totalUsedWidth = cols * actualCellWidth + (cols - 1) * gap;
-    const totalUsedHeight = rows * actualCellHeight + (rows - 1) * gap;
-    const offsetX = (screenWidth - totalUsedWidth) / 2;
-    const offsetY = (screenHeight - totalUsedHeight) / 2;
-
-    for (let i = 0; i < imageCount; i++) {
+    
+    return collageImages;
+  } catch (error) {
+    // Never throw - return a simple fallback layout
+    console.error('generateGridCollage: Error generating grid, returning fallback layout:', error);
+    
+    // Fallback: single column layout
+    const fallbackImages: CollageImage[] = [];
+    const gap = 4;
+    const cellSize = Math.min(screenWidth - gap * 2, (screenHeight - gap * (images.length + 1)) / images.length);
+    const safeCellSize = Math.max(50, cellSize); // Minimum 50px
+    
+    for (let i = 0; i < images.length && i < 20; i++) { // Limit to 20 for safety
       const image = images[i];
-      const row = Math.floor(i / cols);
-      const col = i % cols;
-      
-      const x = offsetX + col * (actualCellWidth + gap);
-      const y = offsetY + row * (actualCellHeight + gap);
-      
-      collageImages.push({
-        id: image.id,
-        url: image.urls.regular,
-        x,
-        y,
-        width: actualCellWidth,
-        height: actualCellHeight,
-        scale: 1,
-        rotation: 0,
-        originalWidth: image.width,
-        originalHeight: image.height,
-      });
+      if (image) {
+        fallbackImages.push({
+          id: image.id,
+          url: image.urls.regular,
+          x: gap,
+          y: gap + i * (safeCellSize + gap),
+          width: safeCellSize,
+          height: safeCellSize,
+          scale: 1,
+          rotation: 0,
+          originalWidth: image.width || safeCellSize,
+          originalHeight: image.height || safeCellSize,
+        });
+      }
     }
+    
+    return fallbackImages;
   }
-
-  return collageImages;
 }
 
 /**
