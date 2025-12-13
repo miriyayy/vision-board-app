@@ -1,4 +1,5 @@
-import { fetchImagesFromUnsplash } from '@/services/unsplash';
+import ImageGrid from '@/components/ImageGrid';
+import { fetchImagesFromUnsplash, SearchImageResult, searchImages } from '@/services/unsplash';
 import { ScreenRatio } from '@/utils/collage';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -18,11 +19,27 @@ export default function InputScreen() {
   const [keywordInput, setKeywordInput] = useState<string>('');
   const [ratio, setRatio] = useState<ScreenRatio>('9:16');
   const [loading, setLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchImageResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const router = useRouter();
 
-  const handleKeywordSubmit = () => {
-    if (keywordInput.trim()) {
-      console.log(keywordInput);
+  const handleKeywordSubmit = async () => {
+    if (!keywordInput.trim()) {
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const images = await searchImages(keywordInput);
+      setSearchResults(images);
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'Failed to fetch images. Please check your API key.'
+      );
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
     }
   };
 
@@ -128,6 +145,19 @@ export default function InputScreen() {
             <Text style={styles.generateButtonText}>Generate Vision Board</Text>
           )}
         </TouchableOpacity>
+
+        {searchLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#2C2C2C" />
+          </View>
+        )}
+
+        {!searchLoading && searchResults.length > 0 && (
+          <View style={styles.resultsContainer}>
+            <Text style={styles.resultsTitle}>Search Results</Text>
+            <ImageGrid images={searchResults} />
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -226,6 +256,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     letterSpacing: 0.5,
+  },
+  loadingContainer: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  resultsContainer: {
+    marginTop: 32,
+  },
+  resultsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2C2C2C',
+    marginBottom: 16,
+    paddingHorizontal: 24,
   },
 });
 
