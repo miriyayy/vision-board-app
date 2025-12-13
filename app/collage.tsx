@@ -1,37 +1,52 @@
+import { UnsplashImage } from '@/services/unsplash';
+import {
+    CollageImage,
+    generateCollage,
+    getScreenDimensions,
+    ScreenRatio,
+} from '@/utils/collage';
+import { Image } from 'expo-image';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  View,
-  StyleSheet,
-  Dimensions,
-  TouchableOpacity,
-  Text,
-  ActivityIndicator,
-  Alert,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Image } from 'expo-image';
-import { UnsplashImage } from '@/services/unsplash';
-import { generateCollage, getScreenDimensions, CollageImage, ScreenRatio } from '@/utils/collage';
 
 export default function CollageScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+
+  const ratio = (params.ratio as ScreenRatio) || '9:16';
+  const imageDataParam = params.imageData as string;
+
   const [collageImages, setCollageImages] = useState<CollageImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [screenDimensions, setScreenDimensions] = useState({ width: 0, height: 0 });
+  const [screenDimensions, setScreenDimensions] = useState({
+    width: 0,
+    height: 0,
+  });
 
   useEffect(() => {
-    try {
-      const ratio = (params.ratio as ScreenRatio) || '9:16';
-      const imageData: UnsplashImage[] = JSON.parse(params.imageData as string);
+    if (!imageDataParam) return;
 
-      // Get screen width (with padding)
+    try {
+      const imageData: UnsplashImage[] = JSON.parse(imageDataParam);
+
       const screenWidth = Dimensions.get('window').width - 48;
       const dimensions = getScreenDimensions(ratio, screenWidth);
       setScreenDimensions(dimensions);
 
-      // Generate collage
-      const collage = generateCollage(imageData, dimensions.width, dimensions.height);
+      const collage = generateCollage(
+        imageData,
+        dimensions.width,
+        dimensions.height
+      );
       setCollageImages(collage);
     } catch (error) {
       Alert.alert('Error', 'Failed to generate collage');
@@ -39,7 +54,7 @@ export default function CollageScreen() {
     } finally {
       setLoading(false);
     }
-  }, [params]);
+  }, [imageDataParam, ratio]);
 
   if (loading) {
     return (
@@ -55,13 +70,19 @@ export default function CollageScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           onPress={() => {
-            // Regenerate with same images
-            const imageData: UnsplashImage[] = JSON.parse(params.imageData as string);
-            const ratio = (params.ratio as ScreenRatio) || '9:16';
-            const dimensions = getScreenDimensions(ratio, Dimensions.get('window').width - 48);
-            const newCollage = generateCollage(imageData, dimensions.width, dimensions.height);
+            const imageData: UnsplashImage[] = JSON.parse(imageDataParam);
+            const dimensions = getScreenDimensions(
+              ratio,
+              Dimensions.get('window').width - 48
+            );
+            const newCollage = generateCollage(
+              imageData,
+              dimensions.width,
+              dimensions.height
+            );
             setCollageImages(newCollage);
           }}
           style={styles.regenerateButton}
@@ -155,4 +176,3 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
 });
-
