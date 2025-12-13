@@ -1,6 +1,7 @@
 import { UnsplashImage } from '@/services/unsplash';
 import {
     CollageImage,
+    CollageMode,
     generateCollage,
     getScreenDimensions,
     ScreenRatio,
@@ -27,6 +28,7 @@ export default function CollageScreen() {
 
   const [collageImages, setCollageImages] = useState<CollageImage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [collageMode, setCollageMode] = useState<CollageMode>('free');
   const [screenDimensions, setScreenDimensions] = useState({
     width: 0,
     height: 0,
@@ -45,7 +47,8 @@ export default function CollageScreen() {
       const collage = generateCollage(
         imageData,
         dimensions.width,
-        dimensions.height
+        dimensions.height,
+        collageMode
       );
       setCollageImages(collage);
     } catch (error) {
@@ -54,7 +57,27 @@ export default function CollageScreen() {
     } finally {
       setLoading(false);
     }
-  }, [imageDataParam, ratio]);
+  }, [imageDataParam, ratio, collageMode]);
+
+  const regenerateCollage = () => {
+    if (!imageDataParam) return;
+    try {
+      const imageData: UnsplashImage[] = JSON.parse(imageDataParam);
+      const dimensions = getScreenDimensions(
+        ratio,
+        Dimensions.get('window').width - 48
+      );
+      const newCollage = generateCollage(
+        imageData,
+        dimensions.width,
+        dimensions.height,
+        collageMode
+      );
+      setCollageImages(newCollage);
+    } catch (error) {
+      console.error('Error regenerating collage:', error);
+    }
+  };
 
   if (loading) {
     return (
@@ -72,22 +95,49 @@ export default function CollageScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => {
-            const imageData: UnsplashImage[] = JSON.parse(imageDataParam);
-            const dimensions = getScreenDimensions(
-              ratio,
-              Dimensions.get('window').width - 48
-            );
-            const newCollage = generateCollage(
-              imageData,
-              dimensions.width,
-              dimensions.height
-            );
-            setCollageImages(newCollage);
-          }}
+          onPress={regenerateCollage}
           style={styles.regenerateButton}
         >
           <Text style={styles.regenerateButtonText}>Regenerate</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.modeToggle}>
+        <TouchableOpacity
+          onPress={() => {
+            setCollageMode('free');
+          }}
+          style={[
+            styles.modeButton,
+            collageMode === 'free' && styles.modeButtonActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.modeButtonText,
+              collageMode === 'free' && styles.modeButtonTextActive,
+            ]}
+          >
+            Free Style
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            setCollageMode('grid');
+          }}
+          style={[
+            styles.modeButton,
+            collageMode === 'grid' && styles.modeButtonActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.modeButtonText,
+              collageMode === 'grid' && styles.modeButtonTextActive,
+            ]}
+          >
+            Symmetric Grid
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -174,5 +224,34 @@ const styles = StyleSheet.create({
   },
   collageImage: {
     borderRadius: 8,
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  modeButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    maxWidth: 200,
+  },
+  modeButtonActive: {
+    backgroundColor: '#2C2C2C',
+    borderColor: '#2C2C2C',
+  },
+  modeButtonText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  modeButtonTextActive: {
+    color: '#fff',
   },
 });

@@ -14,6 +14,7 @@ export interface CollageImage {
 }
 
 export type ScreenRatio = '9:16' | '16:9';
+export type CollageMode = 'free' | 'grid';
 
 /**
  * Calculate screen dimensions based on ratio
@@ -37,7 +38,7 @@ export function getScreenDimensions(ratio: ScreenRatio, maxWidth: number = 400):
 /**
  * Generate a natural, non-symmetrical collage
  */
-export function generateCollage(
+export function generateFreeCollage(
   images: UnsplashImage[],
   screenWidth: number,
   screenHeight: number
@@ -82,5 +83,92 @@ export function generateCollage(
   }
 
   return collageImages;
+}
+
+/**
+ * Generate a symmetric grid collage
+ */
+export function generateGridCollage(
+  images: UnsplashImage[],
+  screenWidth: number,
+  screenHeight: number
+): CollageImage[] {
+  if (images.length === 0) return [];
+
+  const collageImages: CollageImage[] = [];
+  
+  // Calculate optimal grid dimensions
+  const imageCount = images.length;
+  const aspectRatio = screenWidth / screenHeight;
+  
+  // Start with approximate columns based on aspect ratio
+  let cols = Math.ceil(Math.sqrt(imageCount * aspectRatio));
+  let rows = Math.ceil(imageCount / cols);
+  
+  // Adjust to minimize empty space
+  while ((rows - 1) * cols >= imageCount) {
+    rows--;
+  }
+  while (rows * (cols - 1) >= imageCount && cols > 1) {
+    cols--;
+  }
+  rows = Math.ceil(imageCount / cols);
+  
+  // Calculate cell dimensions
+  const gap = 4;
+  const totalGapWidth = gap * (cols - 1);
+  const totalGapHeight = gap * (rows - 1);
+  const cellWidth = (screenWidth - totalGapWidth) / cols;
+  const cellHeight = (screenHeight - totalGapHeight) / rows;
+  
+  // Use the smaller dimension to ensure square or near-square cells
+  const cellSize = Math.min(cellWidth, cellHeight);
+  const actualCellWidth = cellSize;
+  const actualCellHeight = cellSize;
+  
+  // Recalculate gaps to center the grid
+  const totalUsedWidth = cols * actualCellWidth + (cols - 1) * gap;
+  const totalUsedHeight = rows * actualCellHeight + (rows - 1) * gap;
+  const offsetX = (screenWidth - totalUsedWidth) / 2;
+  const offsetY = (screenHeight - totalUsedHeight) / 2;
+
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    const row = Math.floor(i / cols);
+    const col = i % cols;
+    
+    const x = offsetX + col * (actualCellWidth + gap);
+    const y = offsetY + row * (actualCellHeight + gap);
+    
+    collageImages.push({
+      id: image.id,
+      url: image.urls.regular,
+      x,
+      y,
+      width: actualCellWidth,
+      height: actualCellHeight,
+      scale: 1,
+      rotation: 0,
+      originalWidth: image.width,
+      originalHeight: image.height,
+    });
+  }
+
+  return collageImages;
+}
+
+/**
+ * Generate collage based on mode
+ */
+export function generateCollage(
+  images: UnsplashImage[],
+  screenWidth: number,
+  screenHeight: number,
+  mode: CollageMode = 'free'
+): CollageImage[] {
+  if (mode === 'grid') {
+    return generateGridCollage(images, screenWidth, screenHeight);
+  }
+  return generateFreeCollage(images, screenWidth, screenHeight);
 }
 
