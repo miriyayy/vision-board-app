@@ -1,23 +1,30 @@
-import { useState } from 'react';
-import {
-  View,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
-  Text,
-  ActivityIndicator,
-  ScrollView,
-  Alert,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { fetchImagesFromUnsplash } from '@/services/unsplash';
 import { ScreenRatio } from '@/utils/collage';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 
 export default function InputScreen() {
   const [keywords, setKeywords] = useState<string>('');
+  const [keywordInput, setKeywordInput] = useState<string>('');
   const [ratio, setRatio] = useState<ScreenRatio>('9:16');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  const handleKeywordSubmit = () => {
+    if (keywordInput.trim()) {
+      console.log(keywordInput);
+    }
+  };
 
   const handleGenerate = async () => {
     const keywordList = keywords
@@ -62,6 +69,19 @@ export default function InputScreen() {
       <View style={styles.content}>
         <Text style={styles.title}>Vision Board Generator</Text>
         <Text style={styles.subtitle}>Create your aesthetic vision board</Text>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Keyword</Text>
+          <TextInput
+            style={styles.singleInput}
+            placeholder="Enter a keyword"
+            placeholderTextColor="#999"
+            value={keywordInput}
+            onChangeText={setKeywordInput}
+            onSubmitEditing={handleKeywordSubmit}
+            returnKeyType="done"
+          />
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.label}>Keywords (comma-separated)</Text>
@@ -154,6 +174,15 @@ const styles = StyleSheet.create({
     color: '#2C2C2C',
     minHeight: 100,
     textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  singleInput: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#2C2C2C',
     borderWidth: 1,
     borderColor: '#E5E5E5',
   },
