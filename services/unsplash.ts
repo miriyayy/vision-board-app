@@ -98,6 +98,11 @@ export async function fetchImagesFromUnsplash(
   }
 }
 
+interface ImageWithQuery {
+  image: UnsplashImage;
+  query: string;
+}
+
 /**
  * Perform a single Unsplash search with error handling
  */
@@ -132,6 +137,14 @@ async function performSearch(query: string, perPage: number = 10): Promise<Unspl
 }
 
 /**
+ * Check if a query is text-based (contains quote, typography, or text)
+ */
+function isTextBasedQuery(query: string): boolean {
+  const lowerQuery = query.toLowerCase();
+  return lowerQuery.includes('quote') || lowerQuery.includes('typography') || lowerQuery.includes('text');
+}
+
+/**
  * Shuffle array randomly
  */
 function shuffleArray<T>(array: T[]): T[] {
@@ -146,6 +159,7 @@ function shuffleArray<T>(array: T[]): T[] {
 /**
  * Fetch Pinterest-style vision board images
  * Supports main keyword + sub-keywords with aesthetic-focused queries
+ * Enforces 30% max text-based images, 70% min photo images
  */
 export async function fetchVisionBoardImages(
   mainKeyword: string,
@@ -180,25 +194,55 @@ export async function fetchVisionBoardImages(
   const searchPromises = allQueries.map((query) => performSearch(query, 10));
   const resultsArrays = await Promise.all(searchPromises);
 
-  // Merge all results
-  const allImages: UnsplashImage[] = [];
-  for (const results of resultsArrays) {
-    allImages.push(...results);
-  }
-
-  // Remove duplicates by ID
-  const uniqueImagesMap = new Map<string, UnsplashImage>();
-  for (const image of allImages) {
-    if (!uniqueImagesMap.has(image.id)) {
-      uniqueImagesMap.set(image.id, image);
+  // Pair images with their source queries
+  const imagesWithQueries: ImageWithQuery[] = [];
+  for (let i = 0; i < allQueries.length; i++) {
+    const query = allQueries[i];
+    const results = resultsArrays[i];
+    for (const image of results) {
+      imagesWithQueries.push({ image, query });
     }
   }
 
-  // Convert to array, shuffle, and limit
-  const uniqueImages = Array.from(uniqueImagesMap.values());
-  const shuffled = shuffleArray(uniqueImages);
-  const limited = shuffled.slice(0, maxImages);
+  // Remove duplicates by image ID (keep first occurrence)
+  const uniqueImagesMap = new Map<string, ImageWithQuery>();
+  for (const item of imagesWithQueries) {
+    if (!uniqueImagesMap.has(item.image.id)) {
+      uniqueImagesMap.set(item.image.id, item);
+    }
+  }
 
-  return limited;
+  // Categorize into text-based and photo images
+  const textBasedImages: UnsplashImage[] = [];
+  const photoImages: UnsplashImage[] = [];
+
+  for (const item of uniqueImagesMap.values()) {
+    if (isTextBasedQuery(item.query)) {
+      textBasedImages.push(item.image);
+    } else {
+      photoImages.push(item.image);
+    }
+  }
+
+  // Shuffle both categories
+  const shuffledTextBased = shuffleArray(textBasedImages);
+  const shuffledPhoto = shuffleArray(photoImages);
+
+  // Calculate max text-based images (30% of maxImages)
+  const maxTextBased = Math.floor(maxImages * 0.3);
+  const minPhoto = Math.ceil(maxImages * 0.7);
+
+  // Trim text-based images if they exceed the ratio
+  const selectedTextBased = shuffledTextBased.slice(0, maxTextBased);
+  const remainingSlots = maxImages - selectedTextBased.length;
+
+  // Fill remaining slots with photo images
+  const selectedPhoto = shuffledPhoto.slice(0, remainingSlots);
+
+  // Combine and shuffle final result
+  const finalImages = [...selectedTextBased, ...selectedPhoto];
+  const finalShuffled = shuffleArray(finalImages);
+
+  return finalShuffled;
 }
 
