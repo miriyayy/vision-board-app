@@ -1,0 +1,2 @@
+export const UNSPLASH_ACCESS_KEY =
+  process.env.EXPO_PUBLIC_UNSPLASH_ACCESS_KEY!;
