@@ -3,6 +3,8 @@ import {
     CollageImage,
     CollageMode,
     generateCollage,
+    generateFreeCollage,
+    generateGridCollage,
     getScreenDimensions,
     ScreenRatio,
 } from '@/utils/collage';
@@ -67,12 +69,22 @@ export default function CollageScreen() {
         ratio,
         Dimensions.get('window').width - 48
       );
-      const newCollage = generateCollage(
-        imageData,
-        dimensions.width,
-        dimensions.height,
-        collageMode
-      );
+      
+      let newCollage: CollageImage[];
+      if (collageMode === 'free') {
+        newCollage = generateFreeCollage(
+          imageData,
+          dimensions.width,
+          dimensions.height
+        );
+      } else {
+        newCollage = generateGridCollage(
+          imageData,
+          dimensions.width,
+          dimensions.height
+        );
+      }
+      
       setCollageImages(newCollage);
     } catch (error) {
       console.error('Error regenerating collage:', error);
