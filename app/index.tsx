@@ -1,11 +1,13 @@
 import ImageGrid from '@/components/ImageGrid';
 import { fetchImagesFromUnsplash, SearchImageResult, searchImages } from '@/services/unsplash';
 import { ScreenRatio } from '@/utils/collage';
+import { calculateRequiredImageCountForRatio } from '@/utils/imageSupply';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Dimensions,
     ScrollView,
     StyleSheet,
     Text,
@@ -56,7 +58,13 @@ export default function InputScreen() {
 
     setLoading(true);
     try {
-      const images = await fetchImagesFromUnsplash(keywordList, 8);
+      // Calculate required image count for both modes (use the higher count)
+      const screenWidth = Dimensions.get('window').width - 48;
+      const requiredForFree = calculateRequiredImageCountForRatio(ratio, 'free', screenWidth);
+      const requiredForGrid = calculateRequiredImageCountForRatio(ratio, 'grid', screenWidth);
+      const requiredImageCount = Math.max(requiredForFree, requiredForGrid);
+      
+      const images = await fetchImagesFromUnsplash(keywordList, requiredImageCount);
       
       if (images.length === 0) {
         Alert.alert('No Results', 'No images found for your keywords. Try different keywords.');

@@ -97,17 +97,19 @@ export function generateFreeCollage(
   }
 
   // Check coverage and add more images if needed
+  // Only duplicate as last resort if we don't have enough unique images
   let currentCoverage = calculateCoverage(collageImages);
   let imageIndex = 0;
-  const maxIterations = images.length * 3; // Prevent infinite loops
+  const maxIterations = Math.min(images.length * 2, 50); // Prevent excessive duplication
   let iterations = 0;
 
-  while (currentCoverage < targetCoverage && iterations < maxIterations) {
+  // Only duplicate if we truly don't have enough images and coverage is insufficient
+  while (currentCoverage < targetCoverage && iterations < maxIterations && imageIndex < images.length * 2) {
     const imageToReuse = images[imageIndex % images.length];
     const placement = generateFreeImagePlacement(imageToReuse, screenWidth, screenHeight, baseImageSize);
     
     // Create unique ID for duplicate
-    const uniqueId = `${imageToReuse.id}-${collageImages.length}`;
+    const uniqueId = `${imageToReuse.id}-dup-${collageImages.length}`;
     collageImages.push({
       ...placement,
       id: uniqueId,
@@ -137,18 +139,10 @@ export function generateGridCollage(
   // Start with original image count
   let imageCount = images.length;
   let collageImages: CollageImage[] = [];
-  let currentCoverage = 0;
   const gap = 4;
   
-  // Expand image pool if needed to reach target coverage
+  // Only expand image pool as last resort if we truly need more
   let expandedImages = [...images];
-  while (expandedImages.length < imageCount * 2 && currentCoverage < targetCoverage) {
-    const additionalImages = images.map((img, idx) => ({
-      ...img,
-      id: `${img.id}-dup-${expandedImages.length + idx}`,
-    }));
-    expandedImages = [...expandedImages, ...additionalImages];
-  }
 
   // Calculate grid with current image count
   const aspectRatio = screenWidth / screenHeight;
@@ -209,8 +203,20 @@ export function generateGridCollage(
     const offsetY = (screenHeight - newTotalUsedHeight) / 2;
     
     // Generate grid with expanded images
+    // Only duplicate if we don't have enough unique images
     for (let i = 0; i < newImageCount; i++) {
-      const image = expandedImages[i % expandedImages.length];
+      let image: UnsplashImage;
+      if (i < expandedImages.length) {
+        image = expandedImages[i];
+      } else {
+        // Last resort: duplicate an image
+        const sourceImage = expandedImages[i % expandedImages.length];
+        image = {
+          ...sourceImage,
+          id: `${sourceImage.id}-dup-${i}`,
+        };
+      }
+      
       const row = Math.floor(i / cols);
       const col = i % cols;
       

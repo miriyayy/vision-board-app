@@ -72,26 +72,88 @@ export async function searchImages(keyword: string): Promise<SearchImageResult[]
 }
 
 /**
- * Fetch images from Unsplash based on keywords
+ * Fetch a single page of images from Unsplash search
  */
-export async function fetchImagesFromUnsplash(
-  keywords: string[],
-  count: number = 10
+async function fetchSearchPage(
+  query: string,
+  page: number = 1,
+  perPage: number = 30
 ): Promise<UnsplashImage[]> {
   if (!UNSPLASH_ACCESS_KEY) {
     throw new Error('Please add your Unsplash API key in config/env.ts');
   }
 
-  const query = keywords.join(',');
-  const url = `${UNSPLASH_API_URL}/search/photos?query=${encodeURIComponent(query)}&per_page=${count}&client_id=${UNSPLASH_ACCESS_KEY}`;
+  const url = `${UNSPLASH_API_URL}/search/photos?query=${encodeURIComponent(query)}&page=${page}&per_page=${perPage}&client_id=${UNSPLASH_ACCESS_KEY}`;
 
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Unsplash API error: ${response.statusText}`);
+      if (response.status === 401) {
+        throw new Error('Invalid Unsplash API key');
+      } else if (response.status === 403) {
+        throw new Error('Unsplash API rate limit exceeded');
+      } else {
+        throw new Error(`Unsplash API error: ${response.status} ${response.statusText}`);
+      }
     }
     const data: UnsplashResponse = await response.json();
     return data.results;
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(`Error fetching page ${page} for query "${query}":`, error.message);
+      throw error;
+    }
+    throw new Error('Unknown error occurred while fetching images');
+  }
+}
+
+/**
+ * Fetch images from Unsplash based on keywords
+ * Fetches multiple pages if needed to reach requiredImageCount
+ */
+export async function fetchImagesFromUnsplash(
+  keywords: string[],
+  requiredImageCount: number = 10
+): Promise<UnsplashImage[]> {
+  if (keywords.length === 0) {
+    throw new Error('At least one keyword is required');
+  }
+
+  const query = keywords.join(',');
+  const uniqueImagesMap = new Map<string, UnsplashImage>();
+  const maxPages = 10; // Unsplash API limit
+  const perPage = 30; // Maximum per page
+  let currentPage = 1;
+
+  try {
+    while (uniqueImagesMap.size < requiredImageCount && currentPage <= maxPages) {
+      const pageResults = await fetchSearchPage(query, currentPage, perPage);
+      
+      if (pageResults.length === 0) {
+        // No more results available
+        break;
+      }
+
+      // Add unique images (deduplicate by ID)
+      for (const image of pageResults) {
+        if (!uniqueImagesMap.has(image.id)) {
+          uniqueImagesMap.set(image.id, image);
+        }
+      }
+
+      // If we got fewer results than requested, we've reached the end
+      if (pageResults.length < perPage) {
+        break;
+      }
+
+      currentPage++;
+    }
+
+    const uniqueImages = Array.from(uniqueImagesMap.values());
+    
+    // If we still don't have enough, return what we have
+    // (The collage generation will handle this gracefully)
+    return uniqueImages;
   } catch (error) {
     console.error('Error fetching images from Unsplash:', error);
     throw error;
@@ -105,32 +167,71 @@ interface ImageWithQuery {
 
 /**
  * Perform a single Unsplash search with error handling
+ * Fetches multiple pages if needed to reach the requested count
  */
-async function performSearch(query: string, perPage: number = 10): Promise<UnsplashImage[]> {
+async function performSearch(
+  query: string,
+  requiredCount: number = 10
+): Promise<UnsplashImage[]> {
   if (!UNSPLASH_ACCESS_KEY) {
     throw new Error('Please add your Unsplash API key in config/env.ts');
   }
 
-  const url = `${UNSPLASH_API_URL}/search/photos?query=${encodeURIComponent(query)}&per_page=${perPage}&client_id=${UNSPLASH_ACCESS_KEY}`;
+  const uniqueImagesMap = new Map<string, UnsplashImage>();
+  const maxPages = 10;
+  const perPage = 30;
+  let currentPage = 1;
 
   try {
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Invalid Unsplash API key');
-      } else if (response.status === 403) {
-        throw new Error('Unsplash API rate limit exceeded');
-      } else {
-        throw new Error(`Unsplash API error: ${response.status} ${response.statusText}`);
+    while (uniqueImagesMap.size < requiredCount && currentPage <= maxPages) {
+      const url = `${UNSPLASH_API_URL}/search/photos?query=${encodeURIComponent(query)}&page=${currentPage}&per_page=${perPage}&client_id=${UNSPLASH_ACCESS_KEY}`;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Invalid Unsplash API key');
+        } else if (response.status === 403) {
+          throw new Error('Unsplash API rate limit exceeded');
+        } else {
+          // For non-critical errors on later pages, return what we have
+          if (currentPage > 1) {
+            break;
+          }
+          throw new Error(`Unsplash API error: ${response.status} ${response.statusText}`);
+        }
       }
+
+      const data: UnsplashResponse = await response.json();
+      
+      if (data.results.length === 0) {
+        break;
+      }
+
+      // Add unique images
+      for (const image of data.results) {
+        if (!uniqueImagesMap.has(image.id)) {
+          uniqueImagesMap.set(image.id, image);
+        }
+      }
+
+      // If we got fewer results than requested, we've reached the end
+      if (data.results.length < perPage) {
+        break;
+      }
+
+      currentPage++;
     }
 
-    const data: UnsplashResponse = await response.json();
-    return data.results;
+    return Array.from(uniqueImagesMap.values());
   } catch (error) {
     if (error instanceof Error) {
       console.error(`Error fetching images for query "${query}":`, error.message);
+      // Return what we have so far if we got some results
+      if (uniqueImagesMap.size > 0) {
+        return Array.from(uniqueImagesMap.values());
+      }
+      throw error;
     }
     return [];
   }
@@ -160,11 +261,12 @@ function shuffleArray<T>(array: T[]): T[] {
  * Fetch Pinterest-style vision board images
  * Supports main keyword + sub-keywords with aesthetic-focused queries
  * Enforces 30% max text-based images, 70% min photo images
+ * Fetches multiple pages if needed to reach requiredImageCount
  */
 export async function fetchVisionBoardImages(
   mainKeyword: string,
   subKeywords: string[] = [],
-  maxImages: number = 30
+  requiredImageCount: number = 30
 ): Promise<UnsplashImage[]> {
   if (!mainKeyword || mainKeyword.trim().length === 0) {
     throw new Error('Main keyword is required');
@@ -190,8 +292,12 @@ export async function fetchVisionBoardImages(
     }
   }
 
+  // Calculate how many images to fetch per query
+  // Distribute requiredImageCount across queries, with minimum per query
+  const imagesPerQuery = Math.max(10, Math.ceil(requiredImageCount / allQueries.length));
+  
   // Perform all searches in parallel
-  const searchPromises = allQueries.map((query) => performSearch(query, 10));
+  const searchPromises = allQueries.map((query) => performSearch(query, imagesPerQuery));
   const resultsArrays = await Promise.all(searchPromises);
 
   // Pair images with their source queries
@@ -228,13 +334,13 @@ export async function fetchVisionBoardImages(
   const shuffledTextBased = shuffleArray(textBasedImages);
   const shuffledPhoto = shuffleArray(photoImages);
 
-  // Calculate max text-based images (30% of maxImages)
-  const maxTextBased = Math.floor(maxImages * 0.3);
-  const minPhoto = Math.ceil(maxImages * 0.7);
+  // Calculate max text-based images (30% of requiredImageCount)
+  const maxTextBased = Math.floor(requiredImageCount * 0.3);
+  const minPhoto = Math.ceil(requiredImageCount * 0.7);
 
   // Trim text-based images if they exceed the ratio
   const selectedTextBased = shuffledTextBased.slice(0, maxTextBased);
-  const remainingSlots = maxImages - selectedTextBased.length;
+  const remainingSlots = requiredImageCount - selectedTextBased.length;
 
   // Fill remaining slots with photo images
   const selectedPhoto = shuffledPhoto.slice(0, remainingSlots);
