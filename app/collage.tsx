@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
+    Platform,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -217,10 +218,15 @@ export default function CollageScreen() {
                 top: image.y,
                 width: image.width,
                 height: image.height,
-                transform: [{ rotate: `${image.rotation}deg` }],
+                transform: [
+                  { rotate: `${image.rotation}deg` },
+                  { scale: image.scale || 1 },
+                ],
               },
             ]}
             contentFit="cover"
+            placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+            transition={200}
           />
         ))}
       </View>
@@ -231,7 +237,7 @@ export default function CollageScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#F9F8F6',
     padding: 24,
     alignItems: 'center',
   },
@@ -239,7 +245,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#F9F8F6',
   },
   header: {
     flexDirection: 'row',
@@ -258,14 +264,26 @@ const styles = StyleSheet.create({
   },
   regenerateButton: {
     backgroundColor: '#2C2C2C',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   regenerateButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   collageContainer: {
     backgroundColor: '#fff',
@@ -278,35 +296,59 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   collageImage: {
-    borderRadius: 8,
+    borderRadius: 4,
+    backgroundColor: '#E0E0E0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   modeToggle: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginBottom: 24,
     width: '100%',
     justifyContent: 'center',
+    backgroundColor: '#F0F0F0',
+    borderRadius: 12,
+    padding: 4,
   },
   modeButton: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderRadius: 8,
-    padding: 12,
+    padding: 10,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
     maxWidth: 200,
   },
   modeButtonActive: {
-    backgroundColor: '#2C2C2C',
-    borderColor: '#2C2C2C',
+    backgroundColor: '#fff',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   modeButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
     fontWeight: '500',
   },
   modeButtonTextActive: {
-    color: '#fff',
+    color: '#2C2C2C',
+    fontWeight: '600',
   },
 });

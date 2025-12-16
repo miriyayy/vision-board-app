@@ -183,7 +183,7 @@ export function generateGridCollage(
   try {
     const screenArea = screenWidth * screenHeight;
     const targetCoverage = screenArea * 1.1; // 110% coverage target
-    const gap = 4;
+    const gap = 2;
     
     // Start with original image count
     let imageCount = images.length;
@@ -306,7 +306,7 @@ export function generateGridCollage(
     
     // Fallback: single column layout
     const fallbackImages: CollageImage[] = [];
-    const gap = 4;
+    const gap = 2;
     const cellSize = Math.min(screenWidth - gap * 2, (screenHeight - gap * (images.length + 1)) / images.length);
     const safeCellSize = Math.max(50, cellSize); // Minimum 50px
     
