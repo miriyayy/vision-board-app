@@ -10,9 +10,11 @@ import {
 } from '@/utils/collage';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import * as MediaLibrary from 'expo-media-library';
+import { useRef, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Dimensions,
     Platform,
     StyleSheet,
@@ -20,10 +22,12 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import ViewShot from 'react-native-view-shot';
 
 export default function CollageScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const collageViewRef = useRef<ViewShot>(null);
 
   const ratio = (params.ratio as ScreenRatio) || '9:16';
   const imageDataParam = params.imageData as string;
@@ -31,6 +35,7 @@ export default function CollageScreen() {
   const [collageImages, setCollageImages] = useState<CollageImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [collageMode, setCollageMode] = useState<CollageMode>('free');
+  const [saving, setSaving] = useState(false);
   const [screenDimensions, setScreenDimensions] = useState({
     width: 0,
     height: 0,
@@ -135,6 +140,60 @@ export default function CollageScreen() {
     }
   };
 
+  const saveToGallery = async () => {
+    if (!collageViewRef.current) {
+      Alert.alert('Error', 'Unable to capture collage. Please try again.');
+      return;
+    }
+
+    if (saving) {
+      return; // Prevent multiple simultaneous saves
+    }
+
+    setSaving(true);
+
+    try {
+      // Request media library permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Please grant permission to save images to your gallery.',
+          [{ text: 'OK' }]
+        );
+        setSaving(false);
+        return;
+      }
+
+      // Capture the collage view
+      if (!collageViewRef.current) {
+        throw new Error('ViewShot ref is not available');
+      }
+
+      const uri = await collageViewRef.current.capture();
+
+      if (!uri) {
+        throw new Error('Failed to capture collage');
+      }
+
+      // Save to gallery
+      await MediaLibrary.saveToLibraryAsync(uri);
+
+      // Show success message
+      Alert.alert('Saved!', 'Your vision board is now in your gallery.');
+    } catch (error) {
+      console.error('Error saving to gallery:', error);
+      Alert.alert(
+        'Error',
+        'Failed to save image. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -150,12 +209,26 @@ export default function CollageScreen() {
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={regenerateCollage}
-          style={styles.regenerateButton}
-        >
-          <Text style={styles.regenerateButtonText}>Regenerate</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            onPress={saveToGallery}
+            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={regenerateCollage}
+            style={styles.regenerateButton}
+          >
+            <Text style={styles.regenerateButtonText}>Regenerate</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.modeToggle}>
@@ -197,7 +270,8 @@ export default function CollageScreen() {
         </TouchableOpacity>
       </View>
 
-      <View
+      <ViewShot
+        ref={collageViewRef}
         style={[
           styles.collageContainer,
           {
@@ -205,6 +279,10 @@ export default function CollageScreen() {
             height: screenDimensions.height,
           },
         ]}
+        options={{
+          format: 'png',
+          quality: 1.0,
+        }}
       >
         {collageImages.map((image) => (
           <Image
@@ -229,7 +307,7 @@ export default function CollageScreen() {
             transition={200}
           />
         ))}
-      </View>
+      </ViewShot>
     </View>
   );
 }
@@ -254,6 +332,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     alignItems: 'center',
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
   backButton: {
     padding: 8,
   },
@@ -261,6 +344,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#2C2C2C',
     fontWeight: '500',
+  },
+  saveButton: {
+    backgroundColor: '#4A90E2',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   regenerateButton: {
     backgroundColor: '#2C2C2C',
