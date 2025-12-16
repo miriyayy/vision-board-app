@@ -258,10 +258,10 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 /**
- * Fetch Pinterest-style vision board images
+ * Fetch Pinterest-style vision board images with fair distribution
+ * Ensures each keyword gets equal representation
  * Supports main keyword + sub-keywords with aesthetic-focused queries
  * Enforces 30% max text-based images, 70% min photo images
- * Fetches multiple pages if needed to reach requiredImageCount
  */
 export async function fetchVisionBoardImages(
   mainKeyword: string,
@@ -272,47 +272,155 @@ export async function fetchVisionBoardImages(
     throw new Error('Main keyword is required');
   }
 
-  const allQueries: string[] = [];
+  // Step 1: Combine mainKeyword and subKeywords into a single, flattened list of unique topics
+  const allKeywords: string[] = [];
+  
+  // Add main keyword (trimmed)
   const mainKeywordTrimmed = mainKeyword.trim();
+  if (mainKeywordTrimmed.length > 0) {
+    allKeywords.push(mainKeywordTrimmed);
+  }
 
-  // Main keyword variations
-  allQueries.push(`${mainKeywordTrimmed} aesthetic`);
-  allQueries.push(`${mainKeywordTrimmed} lifestyle`);
-  allQueries.push(`${mainKeywordTrimmed} quote typography`);
-  allQueries.push(`${mainKeywordTrimmed} minimal`);
-  allQueries.push(`${mainKeywordTrimmed} inspirational`);
-
-  // Sub-keyword variations
+  // Add sub-keywords (trimmed and filtered for uniqueness)
+  const seenKeywords = new Set<string>([mainKeywordTrimmed.toLowerCase()]);
   for (const subKeyword of subKeywords) {
     const trimmed = subKeyword.trim();
-    if (trimmed.length > 0) {
-      allQueries.push(`${trimmed} aesthetic`);
-      allQueries.push(`${trimmed} lifestyle`);
-      allQueries.push(`${trimmed} quote typography`);
+    if (trimmed.length > 0 && !seenKeywords.has(trimmed.toLowerCase())) {
+      allKeywords.push(trimmed);
+      seenKeywords.add(trimmed.toLowerCase());
     }
   }
 
-  // Calculate how many images to fetch per query
-  // Distribute requiredImageCount across queries, with minimum per query
-  const imagesPerQuery = Math.max(10, Math.ceil(requiredImageCount / allQueries.length));
-  
-  // Perform all searches in parallel
-  const searchPromises = allQueries.map((query) => performSearch(query, imagesPerQuery));
-  const resultsArrays = await Promise.all(searchPromises);
+  // Safety check: ensure we have at least one keyword
+  if (allKeywords.length === 0) {
+    throw new Error('At least one valid keyword is required');
+  }
 
-  // Pair images with their source queries
-  const imagesWithQueries: ImageWithQuery[] = [];
-  for (let i = 0; i < allQueries.length; i++) {
-    const query = allQueries[i];
-    const results = resultsArrays[i];
-    for (const image of results) {
-      imagesWithQueries.push({ image, query });
+  // Step 2: Calculate strict quota for each keyword
+  const imagesPerKeyword = Math.ceil(requiredImageCount / allKeywords.length);
+
+  // Step 3: Fetch images for each keyword with its quota
+  // Use query variations to get aesthetic diversity while maintaining keyword focus
+  // Track images with their source queries for proper text/photo categorization
+  const keywordResults: Map<string, ImageWithQuery[]> = new Map();
+  const keywordQuotas: Map<string, number> = new Map();
+  
+  // Initialize quotas
+  for (const keyword of allKeywords) {
+    keywordQuotas.set(keyword, imagesPerKeyword);
+    keywordResults.set(keyword, []);
+  }
+
+  // Query variations for each keyword to get diverse aesthetic results
+  const queryVariations = [
+    'aesthetic',
+    'lifestyle',
+    'minimal',
+    'inspirational',
+    'quote typography',
+  ];
+
+  // Fetch images for each keyword
+  for (const keyword of allKeywords) {
+    const quota = keywordQuotas.get(keyword)!;
+    const collectedImages: ImageWithQuery[] = [];
+    const uniqueImageIds = new Set<string>();
+
+    // Try different query variations to reach the quota
+    for (const variation of queryVariations) {
+      if (collectedImages.length >= quota) {
+        break;
+      }
+
+      const query = `${keyword} ${variation}`;
+      const remainingNeeded = quota - collectedImages.length;
+      
+      try {
+        const results = await performSearch(query, remainingNeeded);
+        
+        // Add unique images only, tracking the query used
+        for (const image of results) {
+          if (!uniqueImageIds.has(image.id) && collectedImages.length < quota) {
+            uniqueImageIds.add(image.id);
+            collectedImages.push({ image, query });
+          }
+        }
+      } catch (error) {
+        // Log but continue with other variations
+        console.warn(`Failed to fetch images for "${query}":`, error);
+      }
     }
+
+    keywordResults.set(keyword, collectedImages);
+  }
+
+  // Step 4: Smart handling - redistribute deficit if some keywords failed
+  let totalCollected = Array.from(keywordResults.values()).reduce(
+    (sum, imageWithQueries) => sum + imageWithQueries.length,
+    0
+  );
+
+  if (totalCollected < requiredImageCount) {
+    const deficit = requiredImageCount - totalCollected;
+    const successfulKeywords = allKeywords.filter(
+      (keyword) => (keywordResults.get(keyword)?.length || 0) > 0
+    );
+
+    if (successfulKeywords.length > 0) {
+      // Distribute deficit among successful keywords
+      const deficitPerKeyword = Math.ceil(deficit / successfulKeywords.length);
+
+      for (const keyword of successfulKeywords) {
+        if (totalCollected >= requiredImageCount) {
+          break;
+        }
+
+        const currentImages: ImageWithQuery[] = keywordResults.get(keyword)!;
+        const remainingDeficit = requiredImageCount - totalCollected;
+        const additionalNeeded = Math.min(deficitPerKeyword, remainingDeficit);
+
+        if (additionalNeeded > 0) {
+          // Try to fetch more images for this keyword
+          const query = `${keyword} aesthetic`;
+          try {
+            const additionalResults = await performSearch(
+              query,
+              currentImages.length + additionalNeeded
+            );
+
+            const uniqueImageIds = new Set(currentImages.map((item) => item.image.id));
+            const targetCount = currentImages.length + additionalNeeded;
+            for (const image of additionalResults) {
+              if (!uniqueImageIds.has(image.id) && currentImages.length < targetCount) {
+                currentImages.push({ image, query });
+                uniqueImageIds.add(image.id);
+                totalCollected++;
+                if (totalCollected >= requiredImageCount) {
+                  break;
+                }
+              }
+            }
+
+            keywordResults.set(keyword, currentImages);
+          } catch (error) {
+            console.warn(`Failed to fetch additional images for "${keyword}":`, error);
+          }
+        }
+      }
+    }
+  }
+
+  // Step 5: Combine all images and maintain text/photo ratio
+  const allImages: ImageWithQuery[] = [];
+  for (const keyword of allKeywords) {
+    const imageWithQueries = keywordResults.get(keyword) || [];
+    // Add all images with their tracked queries
+    allImages.push(...imageWithQueries);
   }
 
   // Remove duplicates by image ID (keep first occurrence)
   const uniqueImagesMap = new Map<string, ImageWithQuery>();
-  for (const item of imagesWithQueries) {
+  for (const item of allImages) {
     if (!uniqueImagesMap.has(item.image.id)) {
       uniqueImagesMap.set(item.image.id, item);
     }
@@ -323,6 +431,7 @@ export async function fetchVisionBoardImages(
   const photoImages: UnsplashImage[] = [];
 
   for (const item of uniqueImagesMap.values()) {
+    // Check if query contains text-based indicators
     if (isTextBasedQuery(item.query)) {
       textBasedImages.push(item.image);
     } else {
@@ -345,7 +454,7 @@ export async function fetchVisionBoardImages(
   // Fill remaining slots with photo images
   const selectedPhoto = shuffledPhoto.slice(0, remainingSlots);
 
-  // Combine and shuffle final result
+  // Step 6: Final shuffle to mix topics thoroughly
   const finalImages = [...selectedTextBased, ...selectedPhoto];
   const finalShuffled = shuffleArray(finalImages);
 
