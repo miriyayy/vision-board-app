@@ -11,6 +11,7 @@ import {
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import { useRef, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -22,6 +23,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import ViewShot from 'react-native-view-shot';
 import Animated, {
     useSharedValue,
@@ -109,7 +111,6 @@ function DraggableImage({
 
   const pinchGesture = Gesture.Pinch()
     .enabled(isDraggable)
-    .minPointers(2) // Require 2 fingers to distinguish from pan gesture
     .onStart(() => {
       // Bring image to front when pinch starts
       zIndex.value = 999;
@@ -268,6 +269,75 @@ export default function CollageScreen() {
         img.id === imageId ? { ...img, scale: constrainedScale } : img
       )
     );
+  };
+
+  const pickImage = async () => {
+    try {
+      // Request permissions (expo-image-picker handles this automatically)
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Please grant permission to access your photos.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return; // User cancelled
+      }
+
+      const asset = result.assets[0];
+      const imageUri = asset.uri;
+      
+      // Get image dimensions directly from the asset
+      const imgWidth = asset.width;
+      const imgHeight = asset.height;
+
+      // Calculate display size (maintain aspect ratio, reasonable default size)
+      const aspectRatio = imgWidth / imgHeight;
+      const baseSize = Math.min(screenDimensions.width, screenDimensions.height) * 0.3;
+      const displayWidth = baseSize;
+      const displayHeight = baseSize / aspectRatio;
+
+      // Position in center with slight randomness to avoid perfect stacking
+      const centerX = (screenDimensions.width - displayWidth) / 2;
+      const centerY = (screenDimensions.height - displayHeight) / 2;
+      const randomOffsetX = (Math.random() - 0.5) * 40; // ±20px
+      const randomOffsetY = (Math.random() - 0.5) * 40; // ±20px
+
+      const newImage: CollageImage = {
+        id: `user-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+        url: imageUri,
+        x: Math.max(0, Math.min(centerX + randomOffsetX, screenDimensions.width - displayWidth)),
+        y: Math.max(0, Math.min(centerY + randomOffsetY, screenDimensions.height - displayHeight)),
+        width: displayWidth,
+        height: displayHeight,
+        scale: 1,
+        rotation: (Math.random() - 0.5) * 10, // Slight random rotation for visual interest
+        originalWidth: imgWidth,
+        originalHeight: imgHeight,
+      };
+
+      // Add to collage images (will appear on top due to being last in array)
+      setCollageImages((prevImages) => [...prevImages, newImage]);
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert(
+        'Error',
+        'Failed to add photo. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const regenerateCollage = () => {
@@ -489,6 +559,15 @@ export default function CollageScreen() {
           />
         ))}
       </ViewShot>
+
+      {/* Floating Action Button for adding photos */}
+      <TouchableOpacity
+        onPress={pickImage}
+        style={styles.fab}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -643,5 +722,27 @@ const styles = StyleSheet.create({
   modeButtonTextActive: {
     color: '#2C2C2C',
     fontWeight: '600',
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4A90E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
 });
