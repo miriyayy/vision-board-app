@@ -38,6 +38,7 @@ interface DraggableImageProps {
   scale: number;
   mode: CollageMode;
   onDragEnd: (imageId: string, newX: number, newY: number) => void;
+  onScaleEnd: (imageId: string, newScale: number) => void;
 }
 
 function DraggableImage({
@@ -45,9 +46,10 @@ function DraggableImage({
   initialX,
   initialY,
   rotation,
-  scale,
+  scale: initialScale,
   mode,
   onDragEnd,
+  onScaleEnd,
 }: DraggableImageProps) {
   const isDraggable = mode === 'free';
   
@@ -55,18 +57,33 @@ function DraggableImage({
   const translateY = useSharedValue(0);
   const startX = useSharedValue(initialX);
   const startY = useSharedValue(initialY);
+  
+  // Scale state management
+  const scale = useSharedValue(initialScale);
+  const savedScale = useSharedValue(initialScale);
+  
+  // Z-index management for bringing active images to front
+  const zIndex = useSharedValue(0);
 
-  // Update start positions when initial positions change (e.g., after drag ends or mode changes)
+  // Update start positions and scale when initial values change (e.g., after drag/scale ends or mode changes)
   useEffect(() => {
     startX.value = initialX;
     startY.value = initialY;
     translateX.value = 0;
     translateY.value = 0;
-  }, [initialX, initialY, mode]);
+    scale.value = initialScale;
+    savedScale.value = initialScale;
+    // Reset z-index when mode changes (but keep it high if it was already high)
+    if (mode !== 'free') {
+      zIndex.value = 0;
+    }
+  }, [initialX, initialY, initialScale, mode]);
 
   const panGesture = Gesture.Pan()
     .enabled(isDraggable)
     .onStart(() => {
+      // Bring image to front when gesture starts
+      zIndex.value = 999;
       // Capture the current absolute position at drag start
       startX.value = initialX + translateX.value;
       startY.value = initialY + translateY.value;
@@ -87,21 +104,46 @@ function DraggableImage({
       // Reset translation values (position will be updated via state)
       translateX.value = 0;
       translateY.value = 0;
+      // Keep z-index high for better UX (image stays in front)
     });
+
+  const pinchGesture = Gesture.Pinch()
+    .enabled(isDraggable)
+    .minPointers(2) // Require 2 fingers to distinguish from pan gesture
+    .onStart(() => {
+      // Bring image to front when pinch starts
+      zIndex.value = 999;
+      // Store the current scale value at the start of pinch
+      savedScale.value = scale.value;
+    })
+    .onUpdate((event) => {
+      // Update scale based on gesture's scale change
+      scale.value = savedScale.value * event.scale;
+    })
+    .onEnd(() => {
+      // Call onScaleEnd callback on JS thread to update state with final scale
+      runOnJS(onScaleEnd)(image.id, scale.value);
+      // Keep z-index high for better UX (image stays in front)
+    });
+
+  // Combine pan and pinch gestures so they can work simultaneously
+  // This allows dragging while pinching or pinching while dragging
+  const combinedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
+      zIndex: zIndex.value,
       transform: [
         { translateX: translateX.value },
         { translateY: translateY.value },
         { rotate: `${rotation}deg` },
-        { scale: scale },
+        { scale: scale.value },
       ],
     };
   });
 
   return (
-    <GestureDetector gesture={panGesture}>
+    <GestureDetector gesture={combinedGesture}>
       <Animated.View
         style={[
           {
@@ -214,6 +256,17 @@ export default function CollageScreen() {
           y: Math.max(0, Math.min(newY, maxY)),
         };
       })
+    );
+  };
+
+  const handleScaleEnd = (imageId: string, newScale: number) => {
+    // Constrain scale to reasonable bounds (e.g., 0.5x to 3x)
+    const constrainedScale = Math.max(0.5, Math.min(newScale, 3));
+    
+    setCollageImages((prevImages) =>
+      prevImages.map((img) =>
+        img.id === imageId ? { ...img, scale: constrainedScale } : img
+      )
     );
   };
 
@@ -432,6 +485,7 @@ export default function CollageScreen() {
             scale={image.scale || 1}
             mode={collageMode}
             onDragEnd={handleDragEnd}
+            onScaleEnd={handleScaleEnd}
           />
         ))}
       </ViewShot>
