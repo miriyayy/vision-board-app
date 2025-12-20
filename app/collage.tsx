@@ -23,6 +23,114 @@ import {
     View
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+
+interface DraggableImageProps {
+  image: CollageImage;
+  initialX: number;
+  initialY: number;
+  rotation: number;
+  scale: number;
+  mode: CollageMode;
+  onDragEnd: (imageId: string, newX: number, newY: number) => void;
+}
+
+function DraggableImage({
+  image,
+  initialX,
+  initialY,
+  rotation,
+  scale,
+  mode,
+  onDragEnd,
+}: DraggableImageProps) {
+  const isDraggable = mode === 'free';
+  
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const startX = useSharedValue(initialX);
+  const startY = useSharedValue(initialY);
+
+  // Update start positions when initial positions change (e.g., after drag ends or mode changes)
+  useEffect(() => {
+    startX.value = initialX;
+    startY.value = initialY;
+    translateX.value = 0;
+    translateY.value = 0;
+  }, [initialX, initialY, mode]);
+
+  const panGesture = Gesture.Pan()
+    .enabled(isDraggable)
+    .onStart(() => {
+      // Capture the current absolute position at drag start
+      startX.value = initialX + translateX.value;
+      startY.value = initialY + translateY.value;
+    })
+    .onUpdate((event) => {
+      // Update translation based on gesture movement
+      translateX.value = event.translationX;
+      translateY.value = event.translationY;
+    })
+    .onEnd(() => {
+      // Calculate final absolute position
+      const finalX = startX.value + translateX.value;
+      const finalY = startY.value + translateY.value;
+
+      // Call onDragEnd callback on JS thread to update state
+      runOnJS(onDragEnd)(image.id, finalX, finalY);
+
+      // Reset translation values (position will be updated via state)
+      translateX.value = 0;
+      translateY.value = 0;
+    });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { rotate: `${rotation}deg` },
+        { scale: scale },
+      ],
+    };
+  });
+
+  return (
+    <GestureDetector gesture={panGesture}>
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            left: initialX,
+            top: initialY,
+            width: image.width,
+            height: image.height,
+          },
+          animatedStyle,
+        ]}
+      >
+        <Image
+          source={{ uri: image.url }}
+          style={[
+            styles.collageImage,
+            {
+              width: '100%',
+              height: '100%',
+            },
+          ]}
+          contentFit="cover"
+          placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+          transition={200}
+        />
+      </Animated.View>
+    </GestureDetector>
+  );
+}
 
 export default function CollageScreen() {
   const router = useRouter();
@@ -90,6 +198,24 @@ export default function CollageScreen() {
       setLoading(false);
     }
   }, [imageDataParam, ratio, collageMode]);
+
+  const handleDragEnd = (imageId: string, newX: number, newY: number) => {
+    setCollageImages((prevImages) =>
+      prevImages.map((img) => {
+        if (img.id !== imageId) return img;
+        
+        // Constrain position within canvas bounds
+        const maxX = Math.max(0, screenDimensions.width - img.width);
+        const maxY = Math.max(0, screenDimensions.height - img.height);
+        
+        return {
+          ...img,
+          x: Math.max(0, Math.min(newX, maxX)),
+          y: Math.max(0, Math.min(newY, maxY)),
+        };
+      })
+    );
+  };
 
   const regenerateCollage = () => {
     if (!imageDataParam) return;
@@ -297,26 +423,15 @@ export default function CollageScreen() {
         }}
       >
         {collageImages.map((image) => (
-          <Image
+          <DraggableImage
             key={image.id}
-            source={{ uri: image.url }}
-            style={[
-              styles.collageImage,
-              {
-                position: 'absolute',
-                left: image.x,
-                top: image.y,
-                width: image.width,
-                height: image.height,
-                transform: [
-                  { rotate: `${image.rotation}deg` },
-                  { scale: image.scale || 1 },
-                ],
-              },
-            ]}
-            contentFit="cover"
-            placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
-            transition={200}
+            image={image}
+            initialX={image.x}
+            initialY={image.y}
+            rotation={image.rotation}
+            scale={image.scale || 1}
+            mode={collageMode}
+            onDragEnd={handleDragEnd}
           />
         ))}
       </ViewShot>
