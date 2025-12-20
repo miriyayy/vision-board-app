@@ -153,10 +153,11 @@ export default function CollageScreen() {
     setSaving(true);
 
     try {
-      // Request media library permissions
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      // Request media library permissions (write-only to avoid AUDIO permission on Android)
+      const { status } = await MediaLibrary.requestPermissionsAsync(true);
       
       if (status !== 'granted') {
+        console.warn('MediaLibrary permission denied. Status:', status);
         Alert.alert(
           'Permission Required',
           'Please grant permission to save images to your gallery.',
@@ -171,19 +172,30 @@ export default function CollageScreen() {
         throw new Error('ViewShot ref is not available');
       }
 
+      console.log('Capturing collage view...');
       const uri = await collageViewRef.current.capture();
 
       if (!uri) {
-        throw new Error('Failed to capture collage');
+        throw new Error('Failed to capture collage - no URI returned');
       }
 
+      console.log('Collage captured successfully. URI:', uri);
+
       // Save to gallery
+      console.log('Saving to gallery...');
       await MediaLibrary.saveToLibraryAsync(uri);
 
+      console.log('Image saved to gallery successfully');
       // Show success message
       Alert.alert('Saved!', 'Your vision board is now in your gallery.');
     } catch (error) {
-      console.error('Error saving to gallery:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorDetails = error instanceof Error ? error.stack : String(error);
+      console.error('Error saving to gallery:', {
+        message: errorMessage,
+        details: errorDetails,
+        error,
+      });
       Alert.alert(
         'Error',
         'Failed to save image. Please try again.',
