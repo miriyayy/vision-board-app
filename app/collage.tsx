@@ -41,6 +41,7 @@ interface DraggableImageProps {
   mode: CollageMode;
   onDragEnd: (imageId: string, newX: number, newY: number) => void;
   onScaleEnd: (imageId: string, newScale: number) => void;
+  onRemove: (imageId: string) => void;
 }
 
 function DraggableImage({
@@ -52,6 +53,7 @@ function DraggableImage({
   mode,
   onDragEnd,
   onScaleEnd,
+  onRemove,
 }: DraggableImageProps) {
   const isDraggable = mode === 'free';
   
@@ -127,9 +129,19 @@ function DraggableImage({
       // Keep z-index high for better UX (image stays in front)
     });
 
-  // Combine pan and pinch gestures so they can work simultaneously
-  // This allows dragging while pinching or pinching while dragging
-  const combinedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
+  // Long press gesture for removing images
+  const longPressGesture = Gesture.LongPress()
+    .enabled(isDraggable)
+    .minDuration(500)
+    .onStart(() => {
+      // Show alert when long press is detected
+      runOnJS(onRemove)(image.id);
+    });
+
+  // Combine pan, pinch, and long press gestures
+  // Simultaneous allows all gestures to work together, but long press will only trigger
+  // if the user holds for 500ms without significant movement (pan/pinch will take precedence if started)
+  const combinedGesture = Gesture.Simultaneous(panGesture, pinchGesture, longPressGesture);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -268,6 +280,28 @@ export default function CollageScreen() {
       prevImages.map((img) =>
         img.id === imageId ? { ...img, scale: constrainedScale } : img
       )
+    );
+  };
+
+  const handleRemoveImage = (imageId: string) => {
+    Alert.alert(
+      'Remove Image',
+      'Do you want to remove this image from your board?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            setCollageImages((prevImages) =>
+              prevImages.filter((img) => img.id !== imageId)
+            );
+          },
+        },
+      ]
     );
   };
 
@@ -556,6 +590,7 @@ export default function CollageScreen() {
             mode={collageMode}
             onDragEnd={handleDragEnd}
             onScaleEnd={handleScaleEnd}
+            onRemove={handleRemoveImage}
           />
         ))}
       </ViewShot>
